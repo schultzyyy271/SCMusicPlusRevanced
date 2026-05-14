@@ -1,41 +1,63 @@
 <p align="center">
-  <img src="https://rov3r.github.io/depictions/assets/images/scmusicplus-icon.png" width="150" title="SCMusicPlus">
+  <img src="https://rov3r.github.io/depictions/assets/images/scmusicplus-icon.png" width="150" title="SCMusicPlusRevanced">
 </p>
 
-# SCMusicPlus
+# SCMusicPlusRevanced
 Enhance your SoundCloud experience with the following features:
-- Remove Ads
-- Remove Promoted Playlists
-- Remove Upsell Buttons
+- Remove Ads (network-level URL blocking + audio ad controller disabled)
+- Remove Upsell & Go Lite Prompts
+- Unlock Full Track Playback (removes snipped/blocked restrictions)
+- Enable HQ Audio
+- Geo Monetization Bypass
 
-Note: To ensure all ads are blocked, use a DNS filter like nextDNS to block the domain 'ads.soundcloud.com'
+Note: To ensure all ads are blocked, use a DNS filter like NextDNS to block the domain `ads.soundcloud.com`
 
 # Building
-You can build the project any time using GitHub actions. Just run build.yml and you will get both rootful and rootless debs in a zip file.
+You can build the project any time using GitHub Actions. Just run `build.yml` and you will get both rootful and rootless debs in a zip file.
+
+Alternatively, build locally on Linux/WSL:
+```bash
+export THEOS=~/theos
+cd SCMusicPlusRevanced_project
+make package
+```
 
 # Known Issues
 - Sideloading without TrollStore breaks sign-in, even with unmodified ipa
 - Sideloading without TrollStore, on (at least) 7.55.0 or higher, app will crash on launch, even with unmodified ipa
 
 # Installation
-Jailbroken: Add my repo, https://rov3r.github.io/
+**Jailbroken:** Add the repo: `https://rov3r.github.io/`
 
-Sideloaded (TrollStore):
-- Download the REGULAR SoundCloud app from the app store (IMPORTANT)
+**Sideloaded (TrollStore):**
+- Download the REGULAR SoundCloud app from the App Store (IMPORTANT)
 - Sign in to the app
 - Delete the app while still signed in
-- Download the .ipa (application file) from a source of your choosing
+- Download the `.ipa` from a source of your choosing
 - Use Sideloadly to merge the deb (in Releases) with the ipa
-- Once installed, you can enjoy, as you should be logged in already
+- Once installed, you should already be logged in
 
-Sideloaded (Developer Account):
-- Until fixed, users will have to link a Google or Facebook account to their SoundCloud. This can be done on the SoundCloud website.
-- Download the .ipa (application file) from a source of your choosing
+**Sideloaded (Developer Account):**
+- Link a Google or Facebook account to your SoundCloud account first (do this on the SoundCloud website)
+- Download the `.ipa` from a source of your choosing
 - Use Sideloadly to merge the deb (in Releases) with the ipa
-- Install using your preferred sideloading method** (AltStore, Sideloadly, appdb, etc.)
-- Once installed, sign in using only via Google or Facebook. Regular email (including gmail) doesn't work for now. This will be addressed in a future update.
+- Install using your preferred sideloading method (AltStore, Sideloadly, appdb, etc.)
+- Once installed, sign in via Google or Facebook only — regular email sign-in does not work for sideloaded installs
 
-For troubleshooting assistance, please see the issues section of this repository.
+For troubleshooting assistance, please see the Issues section of this repository.
 
-# Depiction
-For the most updated package depiction, including changelogs and known bugs, you can view it here: https://rov3r.github.io/depictions/scmusicplus.html
+# Changelog
+
+### 25.1.0-1
+- Updated `initWithUrn:` signature for latest SoundCloud binary (`isPrivate:` param added between `shareable:` and `blocked:`)
+- Added `isMonetizableAdGeo` hook (new geo-based monetization check)
+- Added `shouldUpsellGoLite` hook (new Go Lite upsell variant)
+- Merged ADsBlocker URL filtering into single tweak — one dylib, one install
+- Forked as SCMusicPlusRevanced
+
+### 24.9.1-3 (moe's build)
+- Updated `initWithUrn:` to v24.x signature with `artworkUrn`, `itemType`, `secretToken`, `playlistStationUrn`, `permalinkURL` params
+- Patched `blocked` and `snipped` flags alongside `monetizable`
+
+### Original (Rov3r)
+- Initial release
