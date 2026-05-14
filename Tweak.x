@@ -1,9 +1,7 @@
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 
-// ─────────────────────────────────────────
 // MARK: - Ad URL Blocklist
-// ─────────────────────────────────────────
 
 static NSArray *blockerList = nil;
 
@@ -39,9 +37,7 @@ static NSArray *blockerList = nil;
 
 %end
 
-// ─────────────────────────────────────────
 // MARK: - SoundCloud Premium Hooks
-// ─────────────────────────────────────────
 
 %hook AdPlayQueueManager
 - (bool)isItemMonetizable:(id)arg1 {
@@ -137,9 +133,7 @@ static NSArray *blockerList = nil;
 }
 %end
 
-// ─────────────────────────────────────────
 // MARK: - Constructor
-// ─────────────────────────────────────────
 
 %ctor {
     // Ad blocklist init
