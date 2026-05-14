@@ -48,7 +48,7 @@ For troubleshooting assistance, please see the Issues section of this repository
 
 # Changelog
 
-### 25.1.0-1
+### 26.1.0-1
 - Updated `initWithUrn:` signature for latest SoundCloud binary (`isPrivate:` param added between `shareable:` and `blocked:`)
 - Added `isMonetizableAdGeo` hook (new geo-based monetization check)
 - Added `shouldUpsellGoLite` hook (new Go Lite upsell variant)
