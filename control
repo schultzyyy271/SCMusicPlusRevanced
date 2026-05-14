@@ -1,0 +1,9 @@
+Package: com.revanced.scmusicplusrevanced
+Name: SCMusicPlusRevanced
+Version: 26.1.0-1
+Architecture: iphoneos-arm64
+Description: Enhance your SoundCloud experience
+Author: Rov3r <rov3rrepo@pm.me>
+Maintainer: Rov3r <rov3rrepo@pm.me>
+Section: Tweaks
+Depends: mobilesubstrate (>= 0.9.5000)
