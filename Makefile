@@ -1,4 +1,6 @@
-THEOS_PACKAGE_SCHEME = rootless
+ARCHS = arm64
+TARGET := iphone:clang:latest:15.0
+INSTALL_TARGET_PROCESSES = SoundCloud
 
 include $(THEOS)/makefiles/common.mk
 
