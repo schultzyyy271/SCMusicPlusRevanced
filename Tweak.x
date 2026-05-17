@@ -101,23 +101,6 @@ static OSStatus hook_SecItemUpdate(CFDictionaryRef query, CFDictionaryRef attrib
 }
 
 // ============================================================================
-// MARK: - Sideload Fix: CKContainer
-// ============================================================================
-
-%hook CKContainer
-
-+ (id)containerWithIdentifier:(id)identifier {
-    // Use default container if the specified one isn't available
-    @try {
-        return %orig;
-    } @catch (NSException *e) {
-        return [%c(CKContainer) defaultContainer];
-    }
-}
-
-%end
-
-// ============================================================================
 // MARK: - Ad URL Blocking via NSURLProtocol
 // ============================================================================
 
