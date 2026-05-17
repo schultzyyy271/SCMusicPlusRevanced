@@ -1,4 +1,4 @@
-name: Build Tweak
+name: Build Dylib
 
 on:
   push:
@@ -37,30 +37,18 @@ jobs:
           mkdir -p theos/sdks
           cp -a sdks-master/*.sdk theos/sdks/ 2>/dev/null || true
 
-      - name: Setup Theos toolchain
-        run: |
-          brew install ldid make
+      - name: Setup toolchain
+        run: brew install ldid make
 
-      - name: Build (rootless)
-        run: |
-          export THEOS=$(pwd)/theos
-          export PATH="$(brew --prefix make)/libexec/gnubin:$PATH"
-          make clean
-          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
-        env:
-          THEOS: ${{ github.workspace }}/theos
-
-      - name: Build (rootful)
+      - name: Build
         run: |
           export THEOS=$(pwd)/theos
           export PATH="$(brew --prefix make)/libexec/gnubin:$PATH"
           make clean
-          make package FINALPACKAGE=1
-        env:
-          THEOS: ${{ github.workspace }}/theos
+          make FINALPACKAGE=1
 
-      - name: Upload debs
+      - name: Upload dylib
         uses: actions/upload-artifact@v4
         with:
-          name: SCMusicPlusRevanced-debs
-          path: packages/*.deb
+          name: SCMusicPlusRevanced.dylib
+          path: .theos/obj/debug/SCMusicPlusRevanced.dylib
