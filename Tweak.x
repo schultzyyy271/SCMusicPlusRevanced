@@ -1,6 +1,8 @@
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
+#import <Security/Security.h>
 #import <objc/runtime.h>
+#import <dlfcn.h>
 
 // ============================================================================
 // SCMusicPlusRevanced — SoundCloud v8.60.0
@@ -18,7 +20,6 @@ static BOOL isBlockedURL(NSString *urlString) {
     return NO;
 }
 
-/// Resolve a Swift class by dotted name, falling back to the mangled name.
 static Class SCResolveClass(const char *dottedName, const char *mangledName) {
     Class cls = objc_getClass(dottedName);
     if (!cls && mangledName) cls = objc_getClass(mangledName);
@@ -26,11 +27,98 @@ static Class SCResolveClass(const char *dottedName, const char *mangledName) {
 }
 
 // ============================================================================
-// MARK: - Ad URL Blocking via NSURLProtocol
+// MARK: - Sideload Fix: App Group Container
 // ============================================================================
-// NSURLProtocol is the correct interception point — it works for every
-// networking API (NSURLSession, NSURLConnection, etc.) and delivers a
-// clean error to the caller without nil-pointer or double-callback issues.
+
+%hook NSFileManager
+
+- (NSURL *)containerURLForSecurityApplicationGroupIdentifier:(NSString *)groupIdentifier {
+    NSURL *orig = %orig;
+    if (orig) return orig;
+
+    NSString *appLibrary = [NSSearchPathForDirectoriesInDomains(
+        NSLibraryDirectory, NSUserDomainMask, YES) firstObject];
+    if (!appLibrary) return nil;
+
+    NSString *groupPath = [appLibrary stringByAppendingPathComponent:
+        [NSString stringWithFormat:@"SharedGroup/%@", groupIdentifier]];
+
+    [[NSFileManager defaultManager] createDirectoryAtPath:groupPath
+                              withIntermediateDirectories:YES
+                                               attributes:nil
+                                                    error:nil];
+    return [NSURL fileURLWithPath:groupPath];
+}
+
+%end
+
+// ============================================================================
+// MARK: - Sideload Fix: Keychain Access Group
+// ============================================================================
+// When sideloaded, the app's keychain access group entitlements don't match.
+// SecItemAdd/CopyMatching/Update fail with errSecMissingEntitlement.
+// Fix: strip kSecAttrAccessGroup from queries so they use the default group.
+// ============================================================================
+
+static OSStatus (*orig_SecItemAdd)(CFDictionaryRef, CFTypeRef *);
+static OSStatus (*orig_SecItemCopyMatching)(CFDictionaryRef, CFTypeRef *);
+static OSStatus (*orig_SecItemUpdate)(CFDictionaryRef, CFDictionaryRef);
+
+static CFMutableDictionaryRef stripAccessGroup(CFDictionaryRef query) {
+    CFMutableDictionaryRef mutable = CFDictionaryCreateMutableCopy(NULL, 0, query);
+    CFDictionaryRemoveValue(mutable, kSecAttrAccessGroup);
+    return mutable;
+}
+
+static OSStatus hook_SecItemAdd(CFDictionaryRef attributes, CFTypeRef *result) {
+    OSStatus status = orig_SecItemAdd(attributes, result);
+    if (status == errSecMissingEntitlement || status == -34018) {
+        CFMutableDictionaryRef fixed = stripAccessGroup(attributes);
+        status = orig_SecItemAdd(fixed, result);
+        CFRelease(fixed);
+    }
+    return status;
+}
+
+static OSStatus hook_SecItemCopyMatching(CFDictionaryRef query, CFTypeRef *result) {
+    OSStatus status = orig_SecItemCopyMatching(query, result);
+    if (status == errSecMissingEntitlement || status == -34018) {
+        CFMutableDictionaryRef fixed = stripAccessGroup(query);
+        status = orig_SecItemCopyMatching(fixed, result);
+        CFRelease(fixed);
+    }
+    return status;
+}
+
+static OSStatus hook_SecItemUpdate(CFDictionaryRef query, CFDictionaryRef attributesToUpdate) {
+    OSStatus status = orig_SecItemUpdate(query, attributesToUpdate);
+    if (status == errSecMissingEntitlement || status == -34018) {
+        CFMutableDictionaryRef fixed = stripAccessGroup(query);
+        status = orig_SecItemUpdate(fixed, attributesToUpdate);
+        CFRelease(fixed);
+    }
+    return status;
+}
+
+// ============================================================================
+// MARK: - Sideload Fix: CKContainer
+// ============================================================================
+
+%hook CKContainer
+
++ (id)containerWithIdentifier:(id)identifier {
+    // Use default container if the specified one isn't available
+    @try {
+        return %orig;
+    } @catch (NSException *e) {
+        return [%c(CKContainer) defaultContainer];
+    }
+}
+
+%end
+
+// ============================================================================
+// MARK: - Ad URL Blocking via NSURLProtocol
 // ============================================================================
 
 @interface SCAdBlockerProtocol : NSURLProtocol
@@ -39,7 +127,6 @@ static Class SCResolveClass(const char *dottedName, const char *mangledName) {
 @implementation SCAdBlockerProtocol
 
 + (BOOL)canInitWithRequest:(NSURLRequest *)request {
-    // Already handled — avoid infinite loops
     if ([NSURLProtocol propertyForKey:@"SCAdBlockerHandled" inRequest:request]) {
         return NO;
     }
@@ -51,7 +138,6 @@ static Class SCResolveClass(const char *dottedName, const char *mangledName) {
 }
 
 - (void)startLoading {
-    // Immediately fail the request with a cancellation error
     NSError *error = [NSError errorWithDomain:NSURLErrorDomain
                                          code:NSURLErrorCancelled
                                      userInfo:nil];
@@ -61,9 +147,6 @@ static Class SCResolveClass(const char *dottedName, const char *mangledName) {
 - (void)stopLoading { }
 
 @end
-
-// Hook NSURLSessionConfiguration so our protocol is injected into every
-// session, including those created with custom configurations.
 
 %hook NSURLSessionConfiguration
 
@@ -97,7 +180,6 @@ static Class SCResolveClass(const char *dottedName, const char *mangledName) {
     return NO;
 }
 
-// Legacy init — present in v8.60.0 (ObjC class)
 - (id)initWithUrn:(id)arg1
      transcodings:(id)arg2
         streamURL:(id)arg3
@@ -135,12 +217,7 @@ monetizationModel:(id)arg21
 %end
 
 // ============================================================================
-// MARK: - Swift: AudioAdPlayerEventController
-// ============================================================================
-// We only hook -init here. The event methods (startAdSession:, adDidStart:,
-// etc.) are Swift-only and not visible to the ObjC runtime, so Logos can't
-// hook them. With shouldRequestAds → NO and isNoAudioAdsEnabled → YES,
-// the ad controllers are never triggered in practice.
+// MARK: - Swift: Ad Player Controllers
 // ============================================================================
 
 %hook SCSoundCloudAudioAdPlayerEventController
@@ -165,7 +242,6 @@ monetizationModel:(id)arg21
     return NO;
 }
 
-// v8.60.0 signature (with isPrivate)
 - (id)initWithUrn:(id)arg1
      transcodings:(id)arg2
         streamURL:(id)arg3
@@ -260,7 +336,6 @@ playlistStationUrn:(id)arg27
 // ============================================================================
 
 %ctor {
-    // -- Ad blocklist (patterns from moe's ADsBlocker + additions) --
     blockerList = @[
         @"ad.getAd",
         @"adsbygoogle",
@@ -288,10 +363,28 @@ playlistStationUrn:(id)arg27
         @"googlesyndication.com",
     ];
 
-    // -- Register ad-blocking NSURLProtocol globally --
+    // Register ad-blocking protocol
     [NSURLProtocol registerClass:[SCAdBlockerProtocol class]];
 
-    // -- Resolve Swift classes (dotted → mangled fallback) --
+    // Swizzle Security framework C functions for keychain fix
+    void *security = dlopen("/System/Library/Frameworks/Security.framework/Security", RTLD_NOW);
+    if (security) {
+        void *secItemAdd = dlsym(security, "SecItemAdd");
+        void *secItemCopy = dlsym(security, "SecItemCopyMatching");
+        void *secItemUpdate = dlsym(security, "SecItemUpdate");
+
+        if (secItemAdd) {
+            MSHookFunction(secItemAdd, (void *)hook_SecItemAdd, (void **)&orig_SecItemAdd);
+        }
+        if (secItemCopy) {
+            MSHookFunction(secItemCopy, (void *)hook_SecItemCopyMatching, (void **)&orig_SecItemCopyMatching);
+        }
+        if (secItemUpdate) {
+            MSHookFunction(secItemUpdate, (void *)hook_SecItemUpdate, (void **)&orig_SecItemUpdate);
+        }
+    }
+
+    // Resolve Swift classes
     Class PlayQueueItemTrackEntity = SCResolveClass(
         "SoundCloud.PlayQueueItemTrackEntity",
         "_TtC10SoundCloud24PlayQueueItemTrackEntity");
@@ -320,7 +413,6 @@ playlistStationUrn:(id)arg27
         "SoundCloud.GoLitePlanManager",
         "_TtC10SoundCloud17GoLitePlanManager");
 
-    // -- Init only classes that were found --
     %init(
         SCSoundCloudPlayQueueItemTrackEntity    = PlayQueueItemTrackEntity    ?: NSObject.class,
         SCSoundCloudUserFeaturesService          = UserFeaturesService          ?: NSObject.class,
