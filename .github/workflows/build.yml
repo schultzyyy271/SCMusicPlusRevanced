@@ -47,8 +47,11 @@ jobs:
           make clean
           make FINALPACKAGE=1
 
+      - name: Find dylib
+        run: find .theos -name "*.dylib" 2>/dev/null || echo "No dylib in .theos"
+
       - name: Upload dylib
         uses: actions/upload-artifact@v4
         with:
           name: SCMusicPlusRevanced.dylib
-          path: .theos/obj/debug/SCMusicPlusRevanced.dylib
+          path: .theos/obj/**/SCMusicPlusRevanced.dylib
