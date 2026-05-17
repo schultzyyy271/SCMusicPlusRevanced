@@ -1,0 +1,66 @@
+name: Build Tweak
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Theos
+        uses: actions/checkout@v4
+        with:
+          repository: theos/theos
+          path: theos
+          submodules: recursive
+
+      - name: Cache Theos SDK
+        id: cache-sdk
+        uses: actions/cache@v4
+        with:
+          path: theos/sdks
+          key: ios-sdk-16.5
+
+      - name: Download iOS SDK
+        if: steps.cache-sdk.outputs.cache-hit != 'true'
+        run: |
+          curl -LO https://github.com/theos/sdks/archive/master.zip
+          unzip -q master.zip
+          mkdir -p theos/sdks
+          cp -a sdks-master/*.sdk theos/sdks/ 2>/dev/null || true
+
+      - name: Setup Theos toolchain
+        run: |
+          brew install ldid make
+
+      - name: Build (rootless)
+        run: |
+          export THEOS=$(pwd)/theos
+          export PATH="$(brew --prefix make)/libexec/gnubin:$PATH"
+          make clean
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+        env:
+          THEOS: ${{ github.workspace }}/theos
+
+      - name: Build (rootful)
+        run: |
+          export THEOS=$(pwd)/theos
+          export PATH="$(brew --prefix make)/libexec/gnubin:$PATH"
+          make clean
+          make package FINALPACKAGE=1
+        env:
+          THEOS: ${{ github.workspace }}/theos
+
+      - name: Upload debs
+        uses: actions/upload-artifact@v4
+        with:
+          name: SCMusicPlusRevanced-debs
+          path: packages/*.deb
