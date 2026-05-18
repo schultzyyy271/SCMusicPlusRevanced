@@ -6,7 +6,6 @@
 
 // SCMusicPlusRevanced — SoundCloud v8.60.0
 
-
 // MARK: - Helpers
 
 static NSArray *blockerList = nil;
