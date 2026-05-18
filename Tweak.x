@@ -370,7 +370,7 @@ playlistStationUrn:(id)arg27
 
 - (bool)isNoAudioAdsEnabled         { return YES; }
 - (bool)isHQAudioFeatureEnabled     { return YES; }
-- (bool)isOfflineSyncFeatureEnabled { return YES; }
+
 
 %end
 
