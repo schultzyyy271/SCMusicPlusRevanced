@@ -11,6 +11,7 @@
 // MARK: - Helpers
 
 static NSArray *blockerList = nil;
+static NSString *sideloadedTeamPrefix = nil;
 
 static BOOL isBlockedURL(NSString *urlString) {
     if (!urlString) return NO;
@@ -24,6 +25,66 @@ static Class SCResolveClass(const char *dottedName, const char *mangledName) {
     Class cls = objc_getClass(dottedName);
     if (!cls && mangledName) cls = objc_getClass(mangledName);
     return cls;
+}
+
+// ============================================================================
+// MARK: - Sideload Fix: Bundle Seed ID Detection
+// ============================================================================
+// When sideloaded with a different signing identity, the team prefix changes.
+// We detect the real prefix by adding a temporary keychain item and reading
+// back the access group the system assigns.
+// ============================================================================
+
+static NSString *detectBundleSeedID(void) {
+    NSDictionary *query = @{
+        (__bridge id)kSecClass:             (__bridge id)kSecClassGenericPassword,
+        (__bridge id)kSecAttrAccount:       @"SCMusicPlusRevanced.seedID.probe",
+        (__bridge id)kSecAttrService:       @"SCMusicPlusRevanced",
+        (__bridge id)kSecReturnAttributes:  @YES,
+    };
+
+    // Try to find an existing probe item first
+    CFTypeRef result = NULL;
+    OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &result);
+
+    if (status == errSecItemNotFound) {
+        // Add a temporary item
+        NSDictionary *add = @{
+            (__bridge id)kSecClass:         (__bridge id)kSecClassGenericPassword,
+            (__bridge id)kSecAttrAccount:   @"SCMusicPlusRevanced.seedID.probe",
+            (__bridge id)kSecAttrService:   @"SCMusicPlusRevanced",
+            (__bridge id)kSecValueData:     [@"probe" dataUsingEncoding:NSUTF8StringEncoding],
+        };
+        status = SecItemAdd((__bridge CFDictionaryRef)add, NULL);
+
+        if (status == errSecSuccess || status == errSecDuplicateItem) {
+            status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &result);
+        }
+    }
+
+    NSString *seedID = nil;
+    if (status == errSecSuccess && result) {
+        NSDictionary *attrs = (__bridge_transfer NSDictionary *)result;
+        NSString *accessGroup = attrs[(__bridge id)kSecAttrAccessGroup];
+        // Access group format: "XXXXXXXXXX.com.soundcloud.TouchApp"
+        // We want the "XXXXXXXXXX" prefix
+        if (accessGroup) {
+            NSRange dot = [accessGroup rangeOfString:@"."];
+            if (dot.location != NSNotFound && dot.location > 0) {
+                seedID = [accessGroup substringToIndex:dot.location];
+            }
+        }
+    }
+
+    // Clean up probe item
+    NSDictionary *del = @{
+        (__bridge id)kSecClass:         (__bridge id)kSecClassGenericPassword,
+        (__bridge id)kSecAttrAccount:   @"SCMusicPlusRevanced.seedID.probe",
+        (__bridge id)kSecAttrService:   @"SCMusicPlusRevanced",
+    };
+    SecItemDelete((__bridge CFDictionaryRef)del);
+
+    return seedID;
 }
 
 // ============================================================================
@@ -53,27 +114,46 @@ static Class SCResolveClass(const char *dottedName, const char *mangledName) {
 %end
 
 // ============================================================================
-// MARK: - Sideload Fix: Keychain Access Group
+// MARK: - Sideload Fix: Keychain Access Group Rewriting
 // ============================================================================
-// When sideloaded, the app's keychain access group entitlements don't match.
-// SecItemAdd/CopyMatching/Update fail with errSecMissingEntitlement.
-// Fix: strip kSecAttrAccessGroup from queries so they use the default group.
+// Rewrite the team prefix in kSecAttrAccessGroup to match the sideloaded
+// app's actual signing identity. This ensures keychain items written by
+// the app can be read back, and vice versa.
 // ============================================================================
 
 static OSStatus (*orig_SecItemAdd)(CFDictionaryRef, CFTypeRef *);
 static OSStatus (*orig_SecItemCopyMatching)(CFDictionaryRef, CFTypeRef *);
 static OSStatus (*orig_SecItemUpdate)(CFDictionaryRef, CFDictionaryRef);
 
-static CFMutableDictionaryRef stripAccessGroup(CFDictionaryRef query) {
+static CFMutableDictionaryRef rewriteAccessGroup(CFDictionaryRef query) {
     CFMutableDictionaryRef mutable = CFDictionaryCreateMutableCopy(NULL, 0, query);
-    CFDictionaryRemoveValue(mutable, kSecAttrAccessGroup);
+
+    if (!sideloadedTeamPrefix) {
+        // No prefix detected — just strip the access group as fallback
+        CFDictionaryRemoveValue(mutable, kSecAttrAccessGroup);
+        return mutable;
+    }
+
+    CFStringRef accessGroup = CFDictionaryGetValue(query, kSecAttrAccessGroup);
+    if (accessGroup && CFGetTypeID(accessGroup) == CFStringGetTypeID()) {
+        NSString *group = (__bridge NSString *)accessGroup;
+        NSRange dot = [group rangeOfString:@"."];
+        if (dot.location != NSNotFound) {
+            // Replace the original team prefix with our sideloaded one
+            NSString *suffix = [group substringFromIndex:dot.location];
+            NSString *rewritten = [sideloadedTeamPrefix stringByAppendingString:suffix];
+            CFDictionarySetValue(mutable, kSecAttrAccessGroup,
+                                 (__bridge CFStringRef)rewritten);
+        }
+    }
+
     return mutable;
 }
 
 static OSStatus hook_SecItemAdd(CFDictionaryRef attributes, CFTypeRef *result) {
     OSStatus status = orig_SecItemAdd(attributes, result);
     if (status == errSecMissingEntitlement || status == -34018) {
-        CFMutableDictionaryRef fixed = stripAccessGroup(attributes);
+        CFMutableDictionaryRef fixed = rewriteAccessGroup(attributes);
         status = orig_SecItemAdd(fixed, result);
         CFRelease(fixed);
     }
@@ -82,8 +162,8 @@ static OSStatus hook_SecItemAdd(CFDictionaryRef attributes, CFTypeRef *result) {
 
 static OSStatus hook_SecItemCopyMatching(CFDictionaryRef query, CFTypeRef *result) {
     OSStatus status = orig_SecItemCopyMatching(query, result);
-    if (status == errSecMissingEntitlement || status == -34018) {
-        CFMutableDictionaryRef fixed = stripAccessGroup(query);
+    if (status == errSecMissingEntitlement || status == -34018 || status == errSecItemNotFound) {
+        CFMutableDictionaryRef fixed = rewriteAccessGroup(query);
         status = orig_SecItemCopyMatching(fixed, result);
         CFRelease(fixed);
     }
@@ -93,7 +173,7 @@ static OSStatus hook_SecItemCopyMatching(CFDictionaryRef query, CFTypeRef *resul
 static OSStatus hook_SecItemUpdate(CFDictionaryRef query, CFDictionaryRef attributesToUpdate) {
     OSStatus status = orig_SecItemUpdate(query, attributesToUpdate);
     if (status == errSecMissingEntitlement || status == -34018) {
-        CFMutableDictionaryRef fixed = stripAccessGroup(query);
+        CFMutableDictionaryRef fixed = rewriteAccessGroup(query);
         status = orig_SecItemUpdate(fixed, attributesToUpdate);
         CFRelease(fixed);
     }
@@ -346,25 +426,22 @@ playlistStationUrn:(id)arg27
         @"googlesyndication.com",
     ];
 
+    // Detect the sideloaded app's team prefix for keychain rewriting
+    sideloadedTeamPrefix = detectBundleSeedID();
+
     // Register ad-blocking protocol
     [NSURLProtocol registerClass:[SCAdBlockerProtocol class]];
 
     // Swizzle Security framework C functions for keychain fix
     void *security = dlopen("/System/Library/Frameworks/Security.framework/Security", RTLD_NOW);
     if (security) {
-        void *secItemAdd = dlsym(security, "SecItemAdd");
-        void *secItemCopy = dlsym(security, "SecItemCopyMatching");
-        void *secItemUpdate = dlsym(security, "SecItemUpdate");
+        void *addFunc = dlsym(security, "SecItemAdd");
+        void *copyFunc = dlsym(security, "SecItemCopyMatching");
+        void *updateFunc = dlsym(security, "SecItemUpdate");
 
-        if (secItemAdd) {
-            MSHookFunction(secItemAdd, (void *)hook_SecItemAdd, (void **)&orig_SecItemAdd);
-        }
-        if (secItemCopy) {
-            MSHookFunction(secItemCopy, (void *)hook_SecItemCopyMatching, (void **)&orig_SecItemCopyMatching);
-        }
-        if (secItemUpdate) {
-            MSHookFunction(secItemUpdate, (void *)hook_SecItemUpdate, (void **)&orig_SecItemUpdate);
-        }
+        if (addFunc)    MSHookFunction(addFunc, (void *)hook_SecItemAdd, (void **)&orig_SecItemAdd);
+        if (copyFunc)   MSHookFunction(copyFunc, (void *)hook_SecItemCopyMatching, (void **)&orig_SecItemCopyMatching);
+        if (updateFunc) MSHookFunction(updateFunc, (void *)hook_SecItemUpdate, (void **)&orig_SecItemUpdate);
     }
 
     // Resolve Swift classes
