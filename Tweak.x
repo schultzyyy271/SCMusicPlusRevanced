@@ -4,9 +4,8 @@
 #import <objc/runtime.h>
 #import <dlfcn.h>
 
-// ============================================================================
 // SCMusicPlusRevanced — SoundCloud v8.60.0
-// ============================================================================
+
 
 // MARK: - Helpers
 
@@ -27,13 +26,13 @@ static Class SCResolveClass(const char *dottedName, const char *mangledName) {
     return cls;
 }
 
-// ============================================================================
+
 // MARK: - Sideload Fix: Bundle Seed ID Detection
-// ============================================================================
+
 // When sideloaded with a different signing identity, the team prefix changes.
 // We detect the real prefix by adding a temporary keychain item and reading
 // back the access group the system assigns.
-// ============================================================================
+
 
 static NSString *detectBundleSeedID(void) {
     NSDictionary *query = @{
@@ -87,9 +86,9 @@ static NSString *detectBundleSeedID(void) {
     return seedID;
 }
 
-// ============================================================================
+
 // MARK: - Sideload Fix: App Group Container
-// ============================================================================
+
 
 %hook NSFileManager
 
@@ -113,13 +112,13 @@ static NSString *detectBundleSeedID(void) {
 
 %end
 
-// ============================================================================
+
 // MARK: - Sideload Fix: Keychain Access Group Rewriting
-// ============================================================================
+
 // Rewrite the team prefix in kSecAttrAccessGroup to match the sideloaded
 // app's actual signing identity. This ensures keychain items written by
 // the app can be read back, and vice versa.
-// ============================================================================
+
 
 static OSStatus (*orig_SecItemAdd)(CFDictionaryRef, CFTypeRef *);
 static OSStatus (*orig_SecItemCopyMatching)(CFDictionaryRef, CFTypeRef *);
@@ -180,9 +179,9 @@ static OSStatus hook_SecItemUpdate(CFDictionaryRef query, CFDictionaryRef attrib
     return status;
 }
 
-// ============================================================================
+
 // MARK: - Ad URL Blocking via NSURLProtocol
-// ============================================================================
+
 
 @interface SCAdBlockerProtocol : NSURLProtocol
 @end
@@ -225,9 +224,8 @@ static OSStatus hook_SecItemUpdate(CFDictionaryRef query, CFDictionaryRef attrib
 
 %end
 
-// ============================================================================
 // MARK: - ObjC Ad Infrastructure
-// ============================================================================
+
 
 %hook AdPlayQueueManager
 
@@ -279,9 +277,8 @@ monetizationModel:(id)arg21
 
 %end
 
-// ============================================================================
 // MARK: - Swift: Ad Player Controllers
-// ============================================================================
+
 
 %hook SCSoundCloudAudioAdPlayerEventController
 - (id)init { return %orig; }
@@ -291,9 +288,8 @@ monetizationModel:(id)arg21
 - (id)init { return %orig; }
 %end
 
-// ============================================================================
 // MARK: - Swift: PlayQueueItemTrackEntity
-// ============================================================================
+
 
 %hook SCSoundCloudPlayQueueItemTrackEntity
 
@@ -346,9 +342,9 @@ playlistStationUrn:(id)arg27
 
 %end
 
-// ============================================================================
+
 // MARK: - Upsell Suppression
-// ============================================================================
+
 
 %hook SCSoundCloudUpsellManager
 
@@ -362,9 +358,8 @@ playlistStationUrn:(id)arg27
 
 %end
 
-// ============================================================================
 // MARK: - Premium Feature Flags
-// ============================================================================
+
 
 %hook SCSoundCloudUserFeaturesService
 
@@ -374,9 +369,9 @@ playlistStationUrn:(id)arg27
 
 %end
 
-// ============================================================================
+
 // MARK: - Ad Request Gating
-// ============================================================================
+
 
 %hook SCSoundCloudAdsRequestPermitter
 
@@ -384,9 +379,9 @@ playlistStationUrn:(id)arg27
 
 %end
 
-// ============================================================================
+
 // MARK: - GoLite Upsell
-// ============================================================================
+
 
 %hook SCSoundCloudGoLitePlanManager
 
@@ -394,9 +389,9 @@ playlistStationUrn:(id)arg27
 
 %end
 
-// ============================================================================
+
 // MARK: - Constructor
-// ============================================================================
+
 
 %ctor {
     blockerList = @[
